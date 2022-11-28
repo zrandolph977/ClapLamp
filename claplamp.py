@@ -1,28 +1,87 @@
-import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library
+#!/usr/bin/python
+import pyaudio
+import sys
+import thread
+from time import sleep
+from array import array
+import RPi.GPIO as GPIO
 
-def button_callback(channel): #Function called when button press is inputted.
-    print("Button was pushed!")
-    relayChannel = 12
-    GPIO.setup(relayChannel, GPIO.OUT)
-  
+clap = 0
+wait = 2
+flag = 0
+pin = 12
+exitFlag = False
+	
 
-    if GPIO.input(relayChannel) == GPIO.LOW:
-        GPIO.output(relayChannel, GPIO.HIGH)
+def toggleLight(c):
+    if GPIO.input(c) == GPIO.LOW:
+        GPIO.output(c, GPIO.HIGH)
     else:
-       GPIO.output(relayChannel, GPIO.LOW)
+        GPIO.output(c, GPIO.LOW)
 
-buttonChannel = 8
-#GPIO SETUP
-GPIO.setwarnings(False) # Ignore warning for now
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(buttonChannel, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
-GPIO.add_event_detect(buttonChannel,GPIO.FALLING,callback=button_callback) # Setup event on pin 10 rising edge
-message = input("Press enter to quit\n\n") # Run until someone presses enter
-GPIO.cleanup() # Clean up
+def waitForClaps(threadName):
+	global clap
+	global flag
+	global wait
+	global exitFlag
+	global pin
+	print("Waiting for more claps")
+	sleep(wait)
+	if clap > 1 and clap < 5:
+		print("Two claps")
+		toggleLight(pin)
+	# elif clap == 3:
+	# 	print "Three claps"
+	#elif clap == 4:
+	#	exitFlag = True
+	#print("Claping Ended")
+	clap = 0
+	flag = 0
+
+def main():
     
+	global clap
+	global flag
+	global pin
 
+	chunk = 1024
+	FORMAT = pyaudio.paInt16
+	CHANNELS = 1
+	RATE = 44100
+	threshold = 3500
+	max_value = 0
+	p = pyaudio.PyAudio()
+	stream = p.open(format=FORMAT,
+					channels=CHANNELS, 
+					rate=RATE, 
+					input=True,
+					output=True,
+					frames_per_buffer=chunk)
+	GPIO.setmode(GPIO.BOARD)
+	GPIO.setup(pin, GPIO.OUT)
+	try:
+		print("Clap detection initialized")
+		while True:
+			data = stream.read(chunk, exception_on_overflow = False)
+			as_ints = array('h', data)
+			max_value = max(as_ints)
+			if max_value > threshold:
+				clap += 1
+				print("Clapped")
+			if clap == 1 and flag == 0:
+				thread.start_new_thread( waitForClaps, ("waitThread",) )
+				flag = 1
+			if exitFlag:
+				sys.exit(0)
+	except (KeyboardInterrupt, SystemExit):
+		print("\rExiting")
+		stream.stop_stream()
+		stream.close()
+		p.terminate()
+		GPIO.cleanup()
 
-
+if __name__ == '__main__':
+	main()
 
 
 
